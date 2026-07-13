@@ -1,4 +1,4 @@
-// Clase para gestionar el Registro, Login y Sesión
+// Clase para gestionar el Registro, Login, Sesión y Recuperación
 class AuthManager {
     constructor() {
         this.modal = document.getElementById('loginModal');
@@ -7,6 +7,8 @@ class AuthManager {
         this.btnSubmit = document.getElementById('btnSubmitForm');
         this.btnLogout = document.getElementById('btnLogout');
         this.btnToggleMode = document.getElementById('btnToggleMode');
+        this.btnRecoverMode = document.getElementById('btnRecoverMode');
+        this.btnAdminPanel = document.getElementById('btnAdminPanel'); 
         
         this.userInput = document.getElementById('usernameInput');
         this.passInput = document.getElementById('passwordInput');
@@ -15,37 +17,56 @@ class AuthManager {
         this.toggleText = document.getElementById('toggleText');
         this.alertMessage = document.getElementById('alertMessage');
 
-        this.isLoginMode = true; 
+        this.currentMode = 'login'; 
         this.initEvents();
     }
 
-    // Función síncrona para inicializar eventos
     initEvents() {
         this.btnOpen.addEventListener('click', () => {
+            this.setMode('login');
             this.modal.classList.remove('d-none');
-            this.clearAlerts();
         });
         
         this.btnClose.addEventListener('click', () => this.modal.classList.add('d-none'));
-        this.btnToggleMode.addEventListener('click', () => this.toggleMode());
+        
+        // Alternar entre Login y Registro
+        this.btnToggleMode.addEventListener('click', () => {
+            this.setMode(this.currentMode === 'login' ? 'register' : 'login');
+        });
+
+        // Alternar a Recuperación de contraseña
+        this.btnRecoverMode.addEventListener('click', () => {
+            this.setMode('recover');
+        });
+        
         this.btnSubmit.addEventListener('click', () => this.handleSubmit());
         this.btnLogout.addEventListener('click', () => this.logout());
     }
 
-    toggleMode() {
-        this.isLoginMode = !this.isLoginMode;
+    setMode(mode) {
+        this.currentMode = mode;
         this.clearAlerts();
+        this.btnRecoverMode.classList.remove('d-none');
         
-        if (this.isLoginMode) {
+        if (mode === 'login') {
             this.modalTitle.innerText = "Iniciar Sesión";
             this.btnSubmit.innerText = "Entrar";
+            this.passInput.placeholder = "Contraseña";
             this.toggleText.innerText = "¿No tienes cuenta?";
             this.btnToggleMode.innerText = "Regístrate";
-        } else {
+        } else if (mode === 'register') {
             this.modalTitle.innerText = "Crear Cuenta";
             this.btnSubmit.innerText = "Registrarme";
+            this.passInput.placeholder = "Crea una contraseña";
             this.toggleText.innerText = "¿Ya tienes cuenta?";
             this.btnToggleMode.innerText = "Inicia Sesión";
+        } else if (mode === 'recover') {
+            this.modalTitle.innerText = "Recuperar Contraseña";
+            this.btnSubmit.innerText = "Restablecer";
+            this.passInput.placeholder = "Escribe tu NUEVA contraseña";
+            this.toggleText.innerText = "¿Recordaste tu clave?";
+            this.btnToggleMode.innerText = "Inicia Sesión";
+            this.btnRecoverMode.classList.add('d-none'); // Oculta este mismo botón
         }
     }
 
@@ -63,10 +84,9 @@ class AuthManager {
         this.alertMessage.innerText = message;
     }
 
-    // Función asíncrona conectando al backend (PHP)
     async handleSubmit() {
         const username = this.userInput.value.trim();
-        const password = this.passInput.value.trim();
+        const password = this.passInput.value.trim(); 
 
         if (!username || !password) {
             this.showAlert("Por favor, llena todos los campos.", false);
@@ -77,27 +97,44 @@ class AuthManager {
         this.btnSubmit.innerText = "Procesando...";
         this.alertMessage.classList.add('d-none');
 
-        const endpoint = this.isLoginMode ? 'login.php' : 'registro.php';
+        let endpoint = '';
+        let payload = {};
+
+        if (this.currentMode === 'login') {
+            endpoint = 'login.php';
+            payload = { username, password };
+        } else if (this.currentMode === 'register') {
+            endpoint = 'registro.php';
+            payload = { username, password };
+        } else if (this.currentMode === 'recover') {
+            endpoint = 'recuperar.php';
+            payload = { username, new_password: password }; 
+        }
 
         try {
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify(payload)
             });
 
             const data = await response.json();
 
             if (data.success) {
-                if (this.isLoginMode) {
+                if (this.currentMode === 'login') {
                     this.modal.classList.add('d-none');
                     this.btnOpen.classList.add('d-none');
                     this.btnLogout.classList.remove('d-none');
                     this.greeting.classList.remove('d-none');
                     this.greeting.innerText = `Hola, ${data.username}`; 
+                    
+                    if (data.rol === 'admin') {
+                        this.btnAdminPanel.classList.remove('d-none');
+                    }
                 } else {
                     this.showAlert(data.mensaje, true);
-                    setTimeout(() => this.toggleMode(), 2000);
+                    // Regresa al login después de 2 segundos si se registró o recuperó exitosamente
+                    setTimeout(() => this.setMode('login'), 2000);
                 }
             } else {
                 this.showAlert(data.mensaje, false);
@@ -106,7 +143,10 @@ class AuthManager {
             this.showAlert("Error de conexión con el servidor local.", false);
         } finally {
             this.btnSubmit.disabled = false;
-            this.btnSubmit.innerText = this.isLoginMode ? "Entrar" : "Registrarme";
+            // Restaurar solo el texto del botón, sin borrar las alertas
+            if (this.currentMode === 'login') this.btnSubmit.innerText = "Entrar";
+            else if (this.currentMode === 'register') this.btnSubmit.innerText = "Registrarme";
+            else if (this.currentMode === 'recover') this.btnSubmit.innerText = "Restablecer";
         }
     }
 
@@ -114,22 +154,20 @@ class AuthManager {
         this.btnOpen.classList.remove('d-none');
         this.btnLogout.classList.add('d-none');
         this.greeting.classList.add('d-none');
+        this.btnAdminPanel.classList.add('d-none');
         this.greeting.innerText = "";
         this.clearAlerts();
     }
 }
-
 
 // Clase para gestionar el Catálogo y las Animaciones
 class GameStore {
     constructor() {
         this.productGrid = document.getElementById('productGrid');
         this.loadingIndicator = document.getElementById('loadingIndicator');
-        
         this.loadCatalog();
     }
 
-    // Función asíncrona para cargar la cuadrícula de juegos
     async loadCatalog() {
         try {
             const products = await this.fetchMockProducts();
@@ -177,10 +215,8 @@ class GameStore {
         this.productGrid.innerHTML = html;
     }
 
-    // Animaciones al hacer scroll usando IntersectionObserver
     setupScrollAnimation() {
         const items = document.querySelectorAll('.scroll-item');
-        
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
@@ -192,7 +228,6 @@ class GameStore {
         items.forEach(item => observer.observe(item));
     }
 
-    // Eventos del Mouse obligatorios para la rúbrica
     setupMouseEvents() {
         const cards = document.querySelectorAll('.product-card');
         cards.forEach(card => {
@@ -202,7 +237,6 @@ class GameStore {
     }
 }
 
-// Inicialización de las clases cuando carga el documento
 document.addEventListener('DOMContentLoaded', () => {
     new AuthManager();
     new GameStore();
